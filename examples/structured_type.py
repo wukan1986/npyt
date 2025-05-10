@@ -16,7 +16,7 @@ arr = np.array([
 ], dtype=dtype)
 print(arr.shape)
 
-nt = NPYT("f1.npy", max_length=9, mode="w+").save(arr).load()
+nt = NPYT("f1.npy", ).save(arr, length=9).load(mmap_mode="r+")
 nt.append(arr)
 nt.append(arr[0:1])
 print(nt.array())

@@ -17,7 +17,7 @@ from numpy.lib.format import dtype_to_descr
 """
 _TAIL_SIZE_: int = 4
 _TAIL_ITEMSIZE_: int = np.dtype(np.uint64).itemsize * _TAIL_SIZE_
-_MAGIC_NUMBER_: int = 20250510
+_MAGIC_NUMBER_: int = 20250510_080000  # 2025年05月10日 东八区
 
 
 class TuplePad(tuple):
@@ -104,7 +104,7 @@ def write_footer(fp, dtype: np.dtype, shape: tuple, end: int, offset: int) -> No
     fp.write(np.array([0, int(end), offset, _MAGIC_NUMBER_], dtype=np.uint64).tobytes())
 
 
-def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) -> int:
+def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) -> None:
     # 重新生成新shape
     shape = get_max_shape(array.shape, length)
     end = get_end(array.shape[0], end)
@@ -118,13 +118,11 @@ def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) ->
         write_footer(fp, array.dtype, shape, end, offset)
         fp.flush()
 
-    return end
 
-
-def load(filename, mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
+def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
     """加载带尾巴的NPY格式文件"""
-    arr = np.load(filename, mmap_mode=mode)
-    tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mode,
+    arr = np.load(filename, mmap_mode=mmap_mode)
+    tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mmap_mode,
                      offset=os.path.getsize(filename) - _TAIL_ITEMSIZE_)
 
     if tail[3] != _MAGIC_NUMBER_:

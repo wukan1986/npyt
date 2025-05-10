@@ -20,53 +20,43 @@ class NPYT:
 
     """
 
-    def __init__(self, filename: str, max_length: int = 1, mode: Literal["r", "r+", "w+"] = "r"):
+    def __init__(self, filename: str):
         """初始化
 
         Parameters
         ----------
         filename:str
             文件名
-        max_length:int
-            最大记录长度
-        mode:str
-            打开模式。
-
-            - r:只读
-            - r+:读写
-            - w+:新建文件并读写。如果文件存在，则会被清空
 
         """
-        self._filename = filename
-        self._max_length = max_length
-        self._mode = mode
+        self._filename: str = filename
         self._arr: Optional[np.ndarray] = None
         self._tail: Optional[np.ndarray] = None
+        self._len: int = 0
+        self._len1p: int = self._len + 1
 
-    def save(self, array: np.ndarray, end: Optional[int] = None) -> "NPYT":
+    def save(self, array: np.ndarray, length: int = 0, end: Optional[int] = None) -> "NPYT":
         """创建文件
 
         Parameters
         ----------
         array:
             初始数据
+        length:int
+            记录长度
         end:int
             结束位置。0表示只创建文件，数据区为空。None表示使用array的长度。
 
         """
-        if "w" in self._mode:
-            # 创建文件
-            self._max_length = save(get_file_ctx(self._filename, mode="wb+"), array, self._max_length, end)
-        elif "+" in self._mode:
-            if not os.path.exists(self._filename):
-                self._max_length = save(get_file_ctx(self._filename, mode="wb+"), array, self._max_length, end)
+        save(get_file_ctx(self._filename, mode="wb+"), array, length, end)
 
         return self
 
-    def load(self) -> "NPYT":
+    def load(self, mmap_mode: Literal["r", "r+"]) -> "NPYT":
         """加载文件。为以后操作做准备"""
-        mode = self._mode.replace('w', 'r')
-        self._arr, self._tail = load(self._filename, mode=mode)
+        self._arr, self._tail = load(self._filename, mmap_mode=mmap_mode)
+        self._len = self._arr.shape[0]
+        self._len1p = self._len + 1
         return self
 
     def resize(self, length: Optional[int] = None) -> "NPYT":
@@ -140,20 +130,43 @@ class NPYT:
         """清空数据。重置位置指针"""
         self._tail[0:2] = 0
 
+    def _data(self, start: int, end: int) -> np.ndarray:
+        if end >= start:
+            # 正常情况
+            return self._arr[start:end]
+        else:
+            # 绕一圈了
+            return np.concatenate([self._arr[start:], self._arr[:end]])
+
     def data(self) -> np.ndarray:
         """取数据区"""
-        start = self._tail[0]
-        end = self._tail[1]
-        return self._arr[start:end]
+        start = int(self._tail[0])
+        end = int(self._tail[1])
+        return self._data(start, end)
 
     def head(self, n: int = 5) -> np.ndarray:
         """取头部数据"""
         start = int(self._tail[0])
         end = start + n
-        return self._arr[start:end]
+        return self._data(start, end)
 
     def tail(self, n: int = 5) -> np.ndarray:
         """取尾部数据"""
         end = int(self._tail[1])
         start = max(end - n, 0)
         return self._arr[start:end]
+
+    def is_empty(self) -> bool:
+        """判断是否为空"""
+        return self._tail[0] == self._tail[1]
+
+    def is_full(self) -> bool:
+        """判断是否已满"""
+        end = int(self._tail[1])
+        # 正向可以存N个，反向可以存N-1个
+        return (end + 1) % self._len1p == self._tail[0]
+
+    def _test(self, start: int, end: int):
+        """强行设置头尾指针，用于测试"""
+        self._tail[0] = start
+        self._tail[1] = end
