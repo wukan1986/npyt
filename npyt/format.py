@@ -96,12 +96,12 @@ def write_header(fp, array: np.ndarray, shape: tuple) -> int:
     return fp.tell()
 
 
-def write_footer(fp, dtype: np.dtype, shape: tuple, end: int, offset: int) -> None:
+def write_footer(fp, dtype: np.dtype, shape: tuple, start: int, end: int, offset: int) -> None:
     """定位 文件头+数据区，然后写入尾巴"""
     # 扩充文件大小
     fp.seek(get_nbytes(dtype, shape, offset), 0)
     # 写入尾巴
-    fp.write(np.array([0, int(end), offset, _MAGIC_NUMBER_], dtype=np.uint64).tobytes())
+    fp.write(np.array([int(start), int(end), offset, _MAGIC_NUMBER_], dtype=np.uint64).tobytes())
 
 
 def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) -> None:
@@ -115,7 +115,7 @@ def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) ->
         if end > 0:
             # 写入数据
             array.tofile(fp)
-        write_footer(fp, array.dtype, shape, end, offset)
+        write_footer(fp, array.dtype, shape, 0, end, offset)
         fp.flush()
 
 
@@ -130,7 +130,7 @@ def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.
     return arr, tail
 
 
-def resize(filename: str, row: np.ndarray, end: int, length: Optional[int] = None):
+def resize(filename: str, row: np.ndarray, start: int, end: int, length: Optional[int] = None):
     """文件截断或扩充
 
     Parameters
@@ -139,6 +139,8 @@ def resize(filename: str, row: np.ndarray, end: int, length: Optional[int] = Non
         文件名
     row:
         初始数据，只是提取dtype等使用。一般只取了一行。
+    start:int
+        开始位置
     end:int
         结束位置
     length:Optional[int]
@@ -152,13 +154,12 @@ def resize(filename: str, row: np.ndarray, end: int, length: Optional[int] = Non
 
     """
     # 自定义数组，不保存数据区，但需要一些基本信息
-    shape = get_max_shape(row[:1].shape, length)
-    end = get_end(row.shape[0], min(end, shape[0]))
+    shape = get_max_shape(row.shape, length)
 
     with get_file_ctx(filename, mode="r+b") as fp:
         offset = write_header(fp, row, shape)
         fp.seek(get_nbytes(row.dtype, shape, 0), 1)
-        write_footer(fp, row.dtype, shape, end, offset)
+        write_footer(fp, row.dtype, shape, start, end, offset)
         fp.truncate(fp.tell())
         fp.flush()
 
