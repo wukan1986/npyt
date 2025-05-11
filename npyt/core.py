@@ -1,12 +1,12 @@
-from typing import Literal, Optional
+# C++ 浅谈Ring Buffer
+# https://mp.weixin.qq.com/s/z2JzgS8dt04SJgWPT1v24w
+from typing import Optional
 
 import numpy as np
+from typing_extensions import Literal  # 3.8+
+from typing_extensions import Self  # 3.11+
 
 from npyt.format import get_file_ctx, save, load, resize
-
-__all__ = [
-    "NPYT",
-]
 
 
 class NPYT:
@@ -15,7 +15,6 @@ class NPYT:
 
     - raw: 原始数据区。与内存映射文件循序一致，为最大长度。可以修改。
     - data: 有效数据区。为有效数据区的长度。环形会拼接成整块。可以修改。
-    - buffer: 缓冲区。从启
 
     Notes
     -----
@@ -33,45 +32,60 @@ class NPYT:
 
         """
         self._filename: str = filename
-        self._arr: Optional[np.ndarray] = None
-        self._tail: Optional[np.ndarray] = None
-        self._len: int = 0
+        self._t: Optional[np.ndarray] = None
+        # 容器，空一行不使用
+        self._a: Optional[np.ndarray] = None
+        self._capacity: int = 0
 
     def _test(self, start: int, end: int):
-        """强行设置头尾指针，仅用于测试"""
-        self._tail[0] = start
-        self._tail[1] = end
+        """测试用。强行设置头尾指针"""
+        self._t[0] = start
+        self._t[1] = end
+
+    def _raw(self) -> np.ndarray:
+        """测试用。取原始数组"""
+        return self._a
+
+    def _raw_len(self) -> int:
+        """测试用。获取原始数组长度"""
+        return self._a.shape[0]
 
     def info(self):
         """获取尾巴关键信息"""
-        return tuple(self._tail.tolist())
+        return tuple(self._t.tolist())
 
     def clear(self):
         """重置位置指针，相当于清空了数据"""
-        self._tail[0:2] = 0
+        self._t[0:2] = 0
 
     def start(self) -> int:
-        """获取数据区开始位置"""
-        return int(self._tail[0])
+        """获取缓冲区开始位置"""
+        return int(self._t[0])
 
     def end(self) -> int:
-        """获取数据区结束位置"""
-        return int(self._tail[1])
+        """获取缓冲区结束位置"""
+        return int(self._t[1])
 
-    def is_empty(self) -> bool:
-        """判断是否为空"""
+    def empty(self) -> bool:
+        """查询缓冲区是否为空"""
         return self.start() == self.end()
 
-    def is_full(self) -> bool:
-        """判断是否已满"""
+    def full(self) -> bool:
+        """查询缓冲区是否已满"""
+        return (self.end() + 1) % self._capacity == self.start()
+
+    def size(self) -> int:
+        """当前缓冲区中元素个数"""
         start = self.start()
         end = self.end()
-        if start == 0:
-            # 正向。可以存满
-            return end == self._len
+        if end >= start:
+            return end - start
         else:
-            # 环向。留一个位置不存，否则无法区分是否为空
-            return end + 1 == start
+            return self._capacity - (start - end)
+
+    def capacity(self) -> int:
+        """缓冲区容量大小（最大可容纳元素数）"""
+        return self._capacity - 1
 
     def head(self, n: int = 5) -> np.ndarray:
         """取头部数据"""
@@ -81,7 +95,7 @@ class NPYT:
         """取尾部数据"""
         return self.data()[-n:]
 
-    def load(self, mmap_mode: Literal["r", "r+"]) -> "NPYT":
+    def load(self, mmap_mode: Literal["r", "r+"]) -> Self:
         """加载文件。为以后操作做准备
 
         Parameters
@@ -93,37 +107,37 @@ class NPYT:
             r+: 读写
 
         """
-        self._arr, self._tail = load(self._filename, mmap_mode=mmap_mode)
-        # 记录两个重要的长度
-        self._len = self._arr.shape[0]
+        self._a, self._t = load(self._filename, mmap_mode=mmap_mode)
+        # 记录容器容量，空一行不存
+        self._capacity = self._a.shape[0]
         return self
 
-    def save(self, array: np.ndarray, length: int = 0, end: Optional[int] = None) -> "NPYT":
+    def save(self, array: np.ndarray, capacity: int = 0, end: Optional[int] = None) -> Self:
         """创建文件
 
         Parameters
         ----------
         array:
             初始数据
-        length:int
-            记录长度
+        capacity:int
+            最大容量
         end:int
             结束位置。0表示只创建文件，数据区为空。None表示使用array的长度。
 
         """
-        save(get_file_ctx(self._filename, mode="wb+"), array, length, end)
+        save(get_file_ctx(self._filename, mode="wb+"), array, capacity, end)
 
         return self
 
-    def resize(self, length: Optional[int] = None) -> "NPYT":
+    def resize(self, capacity: Optional[int] = None) -> Self:
         """文件截断或扩充。不能丢失有效数据
 
         Parameters
         ----------
-        length:int
+        capacity:int
             新的长度。
 
-            None将默认截取到有效数据右边界
+            None将截断数据
 
         Notes
         -----
@@ -139,17 +153,17 @@ class NPYT:
             return self
 
         # 有效右边界
-        if length is None:
-            length = end
-        length = max(end, length)
+        if capacity is None:
+            capacity = end
+        capacity = max(end, capacity)
 
         # 一定要copy,因为后面要释放文件
-        arr = self._arr[:1].copy()
+        arr = self._a[:1].copy()
         # 释放文件占用
-        self._arr = None
-        self._tail = None
+        self._a = None
+        self._t = None
         # 释放后就可以动文件了
-        resize(self._filename, arr, start, end, length)
+        resize(self._filename, arr, start, end, capacity)
 
         return self
 
@@ -169,24 +183,35 @@ class NPYT:
         """
         if end >= start:
             # 正向。原数据可被修改
-            return self._arr[start:end]
+            return self._a[start:end]
         elif part == 0:
-            # 右端
-            return self._arr[start:]
+            # 右端，有一行不用
+            return self._a[start:-1]
         elif part == 1:
             # 左端
-            return self._arr[:end]
+            return self._a[:end]
         else:
             # 环向。原数据无法修改
-            return np.concatenate([self._arr[start:], self._arr[:end]])
+            return np.concatenate([self._a[start:-1], self._a[:end]])
 
-    def append(self, array: np.ndarray) -> "NPYT":
-        """插入数据
+    def data(self) -> np.ndarray:
+        """取数据区。环形数据会拼接起来不可修改"""
+        return self.slice(self.start(), self.end(), part=2)
+
+    def append(self, array: np.ndarray, ringbuffer: bool = False) -> int:
+        """普通缓冲区插入函数，满了后可能只插入了部分
 
         Parameters
         ----------
         array:
             插入的数据
+        ringbuffer:bool
+            是否RingBuffer模式
+
+        Returns
+        -------
+        int
+            剩余未插入的行数
 
         Raises
         ------
@@ -199,72 +224,56 @@ class NPYT:
             - arr[0:1] 正确
             - arr[0] 错误
 
-        2. a[0:0] = b[0:1] 不报错
+        2. a[0:0] = b[0:1] 不报错，也没保存
             (0, 3)  (1, 3)
 
-        3. a[10:20] = b[0:1] 不报错
+        3. a[10:20] = b[0:1] 不报错，也没保存
             (0, 3)  (1, 3)
 
         """
-        size = array.shape[0]
-        if size == 0:
-            # 插入空，直接返回
-            return self
+        remaining = array.shape[0]
+        # 空内容，没必要
+        if remaining == 0:
+            return remaining
 
-        _start = self.end()
-        _end = _start + size
+        start = self.start()
+        end = self.end()
+        if end == self.capacity() and start > 0:
+            # 到末尾了,头又有空间，移动到开头
+            if ringbuffer:
+                end = 0
 
-        self._arr[_start:_end] = array  # ValueError
-        self._tail[1] = _end
-
-        return self
-
-    def raw(self) -> np.ndarray:
-        """取原始数组"""
-        return self._arr
-
-    def raw_len(self) -> int:
-        """获取原始数组长度"""
-        return self._len
-
-    def data(self) -> np.ndarray:
-        """取数据区。环形数据会拼接起来不可修改"""
-        return self.slice(self.start(), self.end(), part=2)
-
-    def data_len(self) -> int:
-        """获取数组长度"""
-        length = self.end() - self.start()
-        if length >= 0:
-            # 正向
-            return length
+        # 找到可填充大小
+        if end >= start:
+            _size = min(self.capacity() - end, remaining)
         else:
-            # 环向
-            return self._len + length
+            _size = min(start - 1 - end, remaining)
 
-    def pop(self, copy: bool) -> np.ndarray:
-        """普通缓冲区不应当有pop操作"""
-        raise NotImplementedError
+        # 无可填充空间，跳过
+        if _size <= 0:
+            return remaining
+        remaining -= _size
+
+        _end = end + _size
+        self._a[end:_end] = array[:_size]
+        self._t[1] = _end
+
+        return remaining
 
 
 class NPYT_RB(NPYT):
     """RingBuffer版"""
 
-    def right_idx(self) -> int:
-        """取最右位置
+    def append(self, array: np.ndarray, ringbuffer: bool = True) -> int:
+        """添加数据，默认是环形缓冲区"""
+        return super().append(array, ringbuffer)
 
-        Notes
-        -----
-        start左侧部分不考虑
-
-        """
-        start = self.start()
-        end = self.end()
-        if end >= start:
-            # 正向
-            return self._len
-        else:
-            # 环向
-            return start - 1
+    def append2(self, array: np.ndarray) -> int:
+        """执行两次，第一次填充右边，第二次填充左边"""
+        remaining = self.append(array, ringbuffer=True)
+        if remaining > 0:
+            remaining = self.append(array[-remaining:], ringbuffer=True)
+        return remaining
 
     def pop(self, copy: bool) -> np.ndarray:
         """取数据块。环形要取两次才能取完
@@ -285,96 +294,15 @@ class NPYT_RB(NPYT):
         start = self.start()
         end = self.end()
         if end >= start:
-            arr = self._arr[start:end]
+            arr = self._a[start:end]
             if copy:
                 arr = arr.copy()
-            if end >= self._len:
-                # 末尾，移动到开头
-                self._tail[0:2] = 0
-            else:
-                # 中段，移动到结束位置
-                self._tail[0] = end
+            self._t[0] = end  # 在任意位置
         else:
-            # 分两次
-            arr = self._arr[start:]
+            # 要取两次，第一次到
+            arr = self._a[start:self.capacity()]
             if copy:
                 arr = arr.copy()
-            self._tail[0] = 0
+            self._t[0] = 0
 
         return arr
-
-    def buffer(self, ringbuffer: bool) -> np.ndarray:
-        """获取缓冲区"""
-        if ringbuffer:
-            # 环向。留一个位置
-            start = self.start()
-            return self.slice(start, start - 1, part=2)
-        else:
-            # 正向。全长
-            return self._arr
-
-    def buffer_len(self, ringbuffer: bool) -> int:
-        """获取缓冲区长度"""
-        if ringbuffer:
-            # 环向。留一个位置
-            return self._len - 1
-        else:
-            # 正向。全长
-            return self._len
-
-    def free_len(self, ringbuffer) -> int:
-        """剩余空间"""
-        if ringbuffer:
-            # 环形缓冲区
-            return self.buffer_len(ringbuffer) - self.data_len()
-        else:
-            # 正向缓冲区
-            return self.buffer_len(ringbuffer) - self.end()
-
-    def append(self, array: np.ndarray, ringbuffer: bool = False) -> "NPYT":
-        """插入数据
-
-        Parameters
-        ----------
-        array:
-            插入的数据
-        ringbuffer:bool
-            是否环形缓冲区模式
-
-        Raises
-        ------
-        ValueError
-            插入的数据长度超过了缓冲区长度
-
-        Notes
-        -----
-        1. 插入一行数据时要注意，shape为(1, n)，而不是(n,)
-            - arr[0:1] 正确
-            - arr[0] 错误
-
-        2. a[0:0] = b[0:1] 不报错
-            (0, 3)  (1, 3)
-
-        """
-        size = array.shape[0]
-        if size == 0:
-            # 插入空，直接返回
-            return self
-
-        _start = self.end()
-        _end = _start + size
-        if ringbuffer:
-            start = self.start()
-            end = self.end()
-            if end >= start:
-                size2 = _end - self.right_idx()
-                size1 = size - size2
-                self._arr[0:max(min(size2, start - 1), 0)] = array[size1:]  # 不报错呀
-                self._arr[_start:] = array[0:size1]
-            else:
-                pass
-        else:
-            self._arr[_start:_end] = array  # ValueError
-            self._tail[1] = _end
-
-        return self

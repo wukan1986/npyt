@@ -5,7 +5,7 @@
 ## 项目特点
 
 1. 与`NPY`文件格式兼容, 可以用原生的`np.load`函数加载
-2. 支持memmap模式, 可以跨进程一读多写
+2. 支持`memmap`模式, 可以跨进程一读多写
 3. 支持调整文件大小
 
 ## 安装
@@ -24,7 +24,7 @@ from npyt import NPYT
 arr = np.array([[1, 2, 3], [4, 5, 6]])
 
 # 创建文件
-nt1 = NPYT("f2.npy").save(arr, length=10, end=0).load(mmap_mode="r+")
+nt1 = NPYT("f2.npy").save(arr, capacity=10, end=0).load(mmap_mode="r+")
 # 只读加载文件
 nt2 = NPYT("f2.npy").load(mmap_mode="r")
 nt3 = NPYT("f2.npy").load(mmap_mode="r")
@@ -73,3 +73,12 @@ print(nt3.data())
 
 这样就可以直接修改数据大小而不用移动数据区。
 故`np.save`保存的文件'.npy'无法用`NPYT`来修改大小，但反过来`NPYT.save`保存的文件可以用`np.load`来读取。
+
+## 环形缓冲区RingBuffer
+
+本项目支持两种用法：
+
+1. 普通缓冲区。`NPYT`
+2. 环形缓冲区。`NPYT_RB`,多了`pop`和`append2`
+
+TODO 为支持环形缓冲区，特意多创建了一列

@@ -32,14 +32,21 @@ class TuplePad(tuple):
         return f"()"  # 空元组
 
 
-def get_max_shape(shape: tuple, length: int) -> tuple:
+def get_shape(shape: tuple, capacity: int) -> tuple:
     """返回偏大的形状"""
     shape = list(shape)
     if len(shape) == 0:
         shape.append(0)
-    shape[0] = max(int(length), shape[0])
+    shape[0] = max(int(capacity + 1), shape[0] + 1)
     shape = TuplePad(shape)
     return shape
+
+
+def get_end(val, end: Optional[int] = None) -> int:
+    """数据区结束位置。end为None时，返回val"""
+    if end is None:
+        end = val
+    return int(end)
 
 
 def get_nbytes(dtype: np.dtype, shape: tuple, offset: int) -> int:
@@ -50,13 +57,6 @@ def get_nbytes(dtype: np.dtype, shape: tuple, offset: int) -> int:
         size *= k
 
     return int(offset + size * dtype.itemsize)
-
-
-def get_end(val, end: Optional[int] = None) -> int:
-    """数据区结束位置。end为None时，返回val"""
-    if end is None:
-        end = val
-    return int(end)
 
 
 def get_file_ctx(file, mode: str = "wb"):
@@ -104,9 +104,20 @@ def write_footer(fp, dtype: np.dtype, shape: tuple, start: int, end: int, offset
     fp.write(np.array([int(start), int(end), offset, _MAGIC_NUMBER_], dtype=np.uint64).tobytes())
 
 
-def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) -> None:
-    # 重新生成新shape
-    shape = get_max_shape(array.shape, length)
+def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
+    """加载带尾巴的NPY格式文件"""
+    arr = np.load(filename, mmap_mode=mmap_mode)
+    tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mmap_mode,
+                     offset=os.path.getsize(filename) - _TAIL_ITEMSIZE_)
+
+    if tail[3] != _MAGIC_NUMBER_:
+        logger.error(f"文件格式错误，不是`NPYT`格式文件，涉及到尾部信息的函数都不正确，谨慎使用")
+    return arr, tail
+
+
+def save(file_ctx, array: np.ndarray, capacity: int, end: Optional[int] = None) -> None:
+    """保存时，shape要多一行"""
+    shape = get_shape(array.shape, capacity)
     end = get_end(array.shape[0], end)
 
     with file_ctx as fp:
@@ -119,18 +130,7 @@ def save(file_ctx, array: np.ndarray, length: int, end: Optional[int] = None) ->
         fp.flush()
 
 
-def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
-    """加载带尾巴的NPY格式文件"""
-    arr = np.load(filename, mmap_mode=mmap_mode)
-    tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mmap_mode,
-                     offset=os.path.getsize(filename) - _TAIL_ITEMSIZE_)
-
-    if tail[3] != _MAGIC_NUMBER_:
-        logger.error(f"文件格式错误，不是`NPYT`格式文件，涉及到尾部信息的函数都不正确，谨慎使用")
-    return arr, tail
-
-
-def resize(filename: str, row: np.ndarray, start: int, end: int, length: Optional[int] = None):
+def resize(filename: str, row: np.ndarray, start: int, end: int, capacity: Optional[int] = None):
     """文件截断或扩充
 
     Parameters
@@ -143,18 +143,16 @@ def resize(filename: str, row: np.ndarray, start: int, end: int, length: Optiona
         开始位置
     end:int
         结束位置
-    length:Optional[int]
-        最大记录长度。None表示使用array的长度。
-        当length大于array的长度时，会自动扩充。
-        当length小于array的长度时，会自动截断。
+    capacity:Optional[int]
+        容量
 
     Notes
     -----
     独占时才能使用
 
     """
-    # 自定义数组，不保存数据区，但需要一些基本信息
-    shape = get_max_shape(row.shape, length)
+    # 其实是直接用的capacity生成shape
+    shape = get_shape(row.shape, capacity)
 
     with get_file_ctx(filename, mode="r+b") as fp:
         offset = write_header(fp, row, shape)

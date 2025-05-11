@@ -16,10 +16,10 @@ arr = np.array([
 ], dtype=dtype)
 print(arr.shape)
 
-nt = NPYT("f1.npy", ).save(arr, length=9).load(mmap_mode="r+")
-nt.append(arr)
-nt.append(arr[0:1])
-print(nt.raw())
+nt = NPYT("f1.npy").save(arr, capacity=5).load(mmap_mode="r+")
+nt.append(arr, ringbuffer=False)
+nt.append(arr[0:1], ringbuffer=False)
+print(nt.data())
 
 # 用numpy原生函数也可以读
-print(np.load("f1.npy"))
+print(np.load("f1.npy")[:-1])
