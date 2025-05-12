@@ -4,7 +4,8 @@ from typing import Optional, Literal, Tuple
 
 import numpy as np
 from loguru import logger
-from numpy.lib.format import _write_array_header
+from numpy.lib.format import GROWTH_AXIS_MAX_DIGITS  # noqa
+from numpy.lib.format import _write_array_header  # noqa
 from numpy.lib.format import dtype_to_descr
 
 """
@@ -24,7 +25,7 @@ class TuplePad(tuple):
 
     def __repr__(self):
         """npy头信息当想扩充或截断时shape字符串长度固定，提前占位"""
-        items = ', '.join(f'{repr(x):>21}' for x in self)
+        items = ', '.join(f'{repr(x):>21}' if i == 0 else repr(x) for i, x in enumerate(self))
         if len(self) > 1:
             return f"({items})"
         if len(self) == 1:
@@ -37,7 +38,8 @@ def get_shape(shape: tuple, capacity: int) -> tuple:
     shape = list(shape)
     if len(shape) == 0:
         shape.append(0)
-    shape[0] = max(int(capacity + 1), shape[0] + 1)
+    # shape[0] = max(int(capacity + 1), shape[0] + 1)
+    shape[0] = max(int(capacity), shape[0])
     shape = TuplePad(shape)
     return shape
 

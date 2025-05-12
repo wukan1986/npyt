@@ -72,7 +72,7 @@ class NPYT:
 
     def full(self) -> bool:
         """查询缓冲区是否已满"""
-        return (self.end() + 1) % self._capacity == self.start()
+        return (self.end() + 1) % (self._capacity + 1) == self.start()
 
     def size(self) -> int:
         """当前缓冲区中元素个数"""
@@ -85,7 +85,7 @@ class NPYT:
 
     def capacity(self) -> int:
         """缓冲区容量大小（最大可容纳元素数）"""
-        return self._capacity - 1
+        return self._capacity
 
     def head(self, n: int = 5) -> np.ndarray:
         """取头部数据"""
@@ -186,19 +186,19 @@ class NPYT:
             return self._a[start:end]
         elif part == 0:
             # 右端，有一行不用
-            return self._a[start:-1]
+            return self._a[start:]
         elif part == 1:
             # 左端
             return self._a[:end]
         else:
             # 环向。原数据无法修改
-            return np.concatenate([self._a[start:-1], self._a[:end]])
+            return np.concatenate([self._a[start:], self._a[:end]])
 
     def data(self) -> np.ndarray:
         """取数据区。环形数据会拼接起来不可修改"""
         return self.slice(self.start(), self.end(), part=2)
 
-    def append(self, array: np.ndarray, ringbuffer: bool = False) -> int:
+    def append(self, array: np.ndarray, ringbuffer: bool = False, bulk: bool = True) -> int:
         """普通缓冲区插入函数，满了后可能只插入了部分
 
         Parameters
@@ -207,6 +207,11 @@ class NPYT:
             插入的数据
         ringbuffer:bool
             是否RingBuffer模式
+        bulk:bool
+            整体一批插入，不能分两次。
+
+            - True: 空间不够时，不插入数据，返回原数组长度
+            - False: 空间不够时，能插就插，返回未插入长度
 
         Returns
         -------
@@ -220,7 +225,7 @@ class NPYT:
 
         Notes
         -----
-        1. 插入一行数据时要注意，shape为(1, n)，而不是(n,)
+        1. 插入单行数据时要注意，shape为(1, n)，而不是(n,)
             - arr[0:1] 正确
             - arr[0] 错误
 
@@ -249,6 +254,10 @@ class NPYT:
         else:
             _size = min(start - 1 - end, remaining)
 
+        if bulk and _size < remaining:
+            # 数据必须整体插入，不能分成两部分
+            return remaining
+
         # 无可填充空间，跳过
         if _size <= 0:
             return remaining
@@ -264,15 +273,15 @@ class NPYT:
 class NPYT_RB(NPYT):
     """RingBuffer版"""
 
-    def append(self, array: np.ndarray, ringbuffer: bool = True) -> int:
+    def append(self, array: np.ndarray, ringbuffer: bool = True, bulk: bool = False) -> int:
         """添加数据，默认是环形缓冲区"""
-        return super().append(array, ringbuffer)
+        return super().append(array, ringbuffer, bulk)
 
     def append2(self, array: np.ndarray) -> int:
         """执行两次，第一次填充右边，第二次填充左边"""
-        remaining = self.append(array, ringbuffer=True)
+        remaining = self.append(array, ringbuffer=True, bulk=False)
         if remaining > 0:
-            remaining = self.append(array[-remaining:], ringbuffer=True)
+            remaining = self.append(array[-remaining:], ringbuffer=True, bulk=False)
         return remaining
 
     def pop(self, copy: bool) -> np.ndarray:

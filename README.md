@@ -21,18 +21,19 @@ import numpy as np
 
 from npyt import NPYT
 
-arr = np.array([[1, 2, 3], [4, 5, 6]])
+arr = np.array([1, 2, 3, 4, 5, 6])
 
+file = "tmp.npy"
 # 创建文件
-nt1 = NPYT("f2.npy").save(arr, capacity=10, end=0).load(mmap_mode="r+")
+nt1 = NPYT(file).save(arr, capacity=10, end=0).load(mmap_mode="r+")
 # 只读加载文件
-nt2 = NPYT("f2.npy").load(mmap_mode="r")
-nt3 = NPYT("f2.npy").load(mmap_mode="r")
+nt2 = NPYT(file).load(mmap_mode="r")
+nt3 = NPYT(file).load(mmap_mode="r")
 
-nt1.append(arr)
+nt1.append(arr, ringbuffer=False, bulk=False)
 print(nt2.data())
 
-nt1.append(arr[0:1])
+nt1.append(arr[0:1], ringbuffer=False, bulk=False)
 print(nt3.data())
 
 ```
@@ -67,8 +68,8 @@ print(nt3.data())
 很明显，这两个字符串的长度是不一样的。而`NPYT`项目修改了此部分，让字符串长度一致，例如；
 
 ```text
-(         20,          3)
-(        200,          3)
+(                    20, 3)
+(                   200, 3)
 ```
 
 这样就可以直接修改数据大小而不用移动数据区。
@@ -80,5 +81,3 @@ print(nt3.data())
 
 1. 普通缓冲区。`NPYT`
 2. 环形缓冲区。`NPYT_RB`,多了`pop`和`append2`
-
-TODO 为支持环形缓冲区，特意多创建了一列
