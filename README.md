@@ -80,4 +80,14 @@ print(nt3.data())
 本项目支持两种用法：
 
 1. 普通缓冲区。`NPYT`
-2. 环形缓冲区。`NPYT_RB`,多了`pop`和`append2`
+2. 环形缓冲区。`NPYT_RB`,多了`append2`和`pop2`
+
+环形一定会出现`start>end`的情况, 如果整块取出数据，会出现要拼接首尾两段数据的情况，这会导致数据复制，降低性能。
+
+## 优化建议
+
+1. 优先使用`NPYT`，并且`append(ringbuffer=False)`，使用普通缓存区
+2. 使用`append(bulk=True)`，防止输入数据被切片到不连续的缓存区
+3. `NPYT.save(arr, capacity=?)` 分配2n以上的空间
+    - 环形缓冲区时，减少成环概率
+    - 普通缓冲区时，减少重置指针概率

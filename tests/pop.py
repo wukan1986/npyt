@@ -2,14 +2,14 @@ import os
 
 import numpy as np
 
-from npyt import NPYT_RB
+from npyt import NPYT
 
 file = "tmp.npy"
 arr = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
 
 
 def test_pop():
-    nt = NPYT_RB(file).save(arr, capacity=6).load(mmap_mode="r+")
+    nt = NPYT(file).save(arr, capacity=6).load(mmap_mode="r+")
 
     np.testing.assert_array_equal(nt.pop(copy=False), arr)
     assert len(nt.pop(copy=False)) == 0

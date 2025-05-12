@@ -76,8 +76,7 @@ class NPYT:
 
     def size(self) -> int:
         """当前缓冲区中元素个数"""
-        start = self.start()
-        end = self.end()
+        start, end = self.start(), self.end()
         if end >= start:
             return end - start
         else:
@@ -86,14 +85,6 @@ class NPYT:
     def capacity(self) -> int:
         """缓冲区容量大小（最大可容纳元素数）"""
         return self._capacity
-
-    def head(self, n: int = 5) -> np.ndarray:
-        """取头部数据"""
-        return self.data()[:n]
-
-    def tail(self, n: int = 5) -> np.ndarray:
-        """取尾部数据"""
-        return self.data()[-n:]
 
     def load(self, mmap_mode: Literal["r", "r+"]) -> Self:
         """加载文件。为以后操作做准备
@@ -108,7 +99,6 @@ class NPYT:
 
         """
         self._a, self._t = load(self._filename, mmap_mode=mmap_mode)
-        # 记录容器容量，空一行不存
         self._capacity = self._a.shape[0]
         return self
 
@@ -145,8 +135,7 @@ class NPYT:
 
         """
         # 一些基本信息
-        start = self.start()
-        end = self.end()
+        start, end = self.start(), self.end()
 
         # 数据环形，文件不能动了
         if end < start:
@@ -185,7 +174,7 @@ class NPYT:
             # 正向。原数据可被修改
             return self._a[start:end]
         elif part == 0:
-            # 右端，有一行不用
+            # 右端
             return self._a[start:]
         elif part == 1:
             # 左端
@@ -198,15 +187,80 @@ class NPYT:
         """取数据区。环形数据会拼接起来不可修改"""
         return self.slice(self.start(), self.end(), part=2)
 
+    def head(self, n: int = 5) -> np.ndarray:
+        """取头部数据"""
+        # 这种写法某些情况下产生复制，效率低
+        # return self.data()[:n]
+        start, end = self.start(), self.end()
+        if end >= start:
+            return self._a[start:min(start + n, end)]
+
+        a1 = self._a[start:start + n]
+        remaining = n - len(a1)
+        if remaining == 0 or end == 0:
+            return a1
+
+        # 这后面发生了合并复制
+        a2 = self._a[:min(remaining, end)]
+        return np.concatenate([a1, a2])
+
+    def tail(self, n: int = 5) -> np.ndarray:
+        """取尾部数据"""
+        # 这种写法某些情况下产生复制，效率低
+        # return self.data()[-n:]
+        start, end = self.start(), self.end()
+        if end >= start:
+            return self._a[max(start, end - n):end]
+
+        a2 = self._a[max(end - n, 0):end]
+        remaining = n - len(a2)
+        if remaining == 0 or start == self._raw_len():
+            return a2
+
+        # 这后面发生了合并复制
+        a1 = self._a[max(self._raw_len() - remaining, start):]
+        return np.concatenate([a1, a2])
+
+    def pop(self, copy: bool) -> np.ndarray:
+        """取数据块。环形要取两次才能取完
+
+        底层是切片，然后移动指针位置
+
+        Parameters
+        ----------
+        copy:bool
+            是否复制
+
+        Notes
+        -----
+        1. 取数时，如果其他线程正在写，可能指针位置已经指向开头，但数据还没有复制出来
+         可以选择`copy=True`，但遇到大数据量性能下降
+
+        """
+        start, end = self.start(), self.end()
+        if end >= start:
+            arr = self._a[start:end]
+            if copy:
+                arr = arr.copy()
+            self._t[0] = end  # 在任意位置
+        else:
+            # 要取两次，第一次到
+            arr = self._a[start:self.capacity()]
+            if copy:
+                arr = arr.copy()
+            self._t[0] = 0
+
+        return arr
+
     def append(self, array: np.ndarray, ringbuffer: bool = False, bulk: bool = True) -> int:
-        """普通缓冲区插入函数，满了后可能只插入了部分
+        """缓冲区插入函数
 
         Parameters
         ----------
         array:
             插入的数据
         ringbuffer:bool
-            是否RingBuffer模式
+            是否RingBuffer模式。RingBuffer模式会出现start>end的情况，在取全体数据时会导致拼接复制
         bulk:bool
             整体一批插入，不能分两次。
 
@@ -241,16 +295,20 @@ class NPYT:
         if remaining == 0:
             return remaining
 
-        start = self.start()
-        end = self.end()
-        if end == self.capacity() and start > 0:
-            # 到末尾了,头又有空间，移动到开头
-            if ringbuffer:
+        start, end = self.start(), self.end()
+
+        # 数据空了，后面空间也不够，移动到开头
+        if start == end and end + remaining >= self._raw_len():
+            end = 0
+            start = 0
+        elif end == self._raw_len():
+            # 到末尾了,头部又有空间，移动到开头
+            if ringbuffer and start > 0:
                 end = 0
 
         # 找到可填充大小
         if end >= start:
-            _size = min(self.capacity() - end, remaining)
+            _size = min(self._raw_len() - end, remaining)
         else:
             _size = min(start - 1 - end, remaining)
 
@@ -280,38 +338,18 @@ class NPYT_RB(NPYT):
     def append2(self, array: np.ndarray) -> int:
         """执行两次，第一次填充右边，第二次填充左边"""
         remaining = self.append(array, ringbuffer=True, bulk=False)
+        # 插入失败，直接返回
+        if remaining == array.shape[0]:
+            return remaining
+
+        # 还有剩余，再插一次
         if remaining > 0:
             remaining = self.append(array[-remaining:], ringbuffer=True, bulk=False)
         return remaining
 
-    def pop(self, copy: bool) -> np.ndarray:
-        """取数据块。环形要取两次才能取完
-
-        底层是切片，然后移动指针位置
-
-        Parameters
-        ----------
-        copy:bool
-            是否复制
-
-        Notes
-        -----
-        1. 取数时，如果其他线程正在写，可能指针位置已经指向开头，但数据还没有复制出来
-         可以选择`copy=True`，但遇到大数据量性能下降
-
-        """
-        start = self.start()
-        end = self.end()
-        if end >= start:
-            arr = self._a[start:end]
-            if copy:
-                arr = arr.copy()
-            self._t[0] = end  # 在任意位置
-        else:
-            # 要取两次，第一次到
-            arr = self._a[start:self.capacity()]
-            if copy:
-                arr = arr.copy()
-            self._t[0] = 0
-
-        return arr
+    def pop2(self, copy=True):
+        arr1 = super().pop(copy=copy)
+        arr2 = super().pop(copy=copy)
+        if arr2.shape[0] == 0:
+            return arr1
+        return np.concatenate([arr1, arr2])
