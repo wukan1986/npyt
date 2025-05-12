@@ -1,5 +1,6 @@
 # C++ 浅谈Ring Buffer
 # https://mp.weixin.qq.com/s/z2JzgS8dt04SJgWPT1v24w
+import os
 from typing import Optional
 
 import numpy as np
@@ -36,6 +37,7 @@ class NPYT:
         # 容器，空一行不使用
         self._a: Optional[np.ndarray] = None
         self._capacity: int = 0
+        self._tell: int = 0
 
     def _test(self, start: int, end: int):
         """测试用。强行设置头尾指针"""
@@ -239,16 +241,16 @@ class NPYT:
         """
         start, end = self.start(), self.end()
         if end >= start:
-            arr = self._a[start:end]
-            if copy:
-                arr = arr.copy()
-            self._t[0] = end  # 在任意位置
+            _end = end
+            _start = end
         else:
-            # 要取两次，第一次到
-            arr = self._a[start:self.capacity()]
-            if copy:
-                arr = arr.copy()
-            self._t[0] = 0
+            _end = self._raw_len()
+            _start = 0
+
+        arr = self._a[start:end]
+        if copy:
+            arr = arr.copy()
+        self._t[0] = _start
 
         return arr
 
@@ -326,6 +328,65 @@ class NPYT:
         self._t[1] = _end
 
         return remaining
+
+    def tell(self) -> int:
+        return self._tell
+
+    def rewind(self) -> None:
+        """重置当前指针到数据的起始位置
+
+        Notes
+        -----
+        `pop`后导致start发生变化，根据业务需要，可能要重置指针到start
+
+        """
+        self._tell = self.start()
+
+    def seek(self, offset: int, whence: int = 0) -> None:
+        """在start:end范围内seek
+
+        Parameters
+        ----------
+        offset:int
+            >0: 向后偏
+            <0: 向前偏
+        whence:int
+            0,1,2
+
+        """
+        start, end = self.start(), self.end()
+        if whence == os.SEEK_SET:
+            _curr = start
+        elif whence == os.SEEK_CUR:
+            _curr = self._tell
+        elif whence == os.SEEK_END:
+            _curr = end
+        else:
+            _curr = end
+
+        if end >= start:
+            self._tell = max(min(_curr + offset, end), start)
+        else:
+            start -= self._raw_len()
+            end += self._raw_len()
+            self._tell = max(min(_curr + offset, end), start) % (self._capacity + 1)
+
+    def read(self, n: int = 1, copy: bool = False) -> np.ndarray:
+        """读取n行数据。不移动start指针，而是移动tell指针"""
+        start, end = self.tell(), self.end() # 这里用的是tell
+        if end >= start:
+            _end = min(self._tell + n, end)
+            _tell = _end
+        else:
+            _end = min(self._tell + n, self._raw_len())
+            _tell = _end % self._capacity
+
+        arr = self._a[self._tell:_end]
+        if copy:
+            arr = arr.copy()
+        self._tell = _tell
+
+        return arr
 
 
 class NPYT_RB(NPYT):

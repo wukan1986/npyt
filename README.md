@@ -5,8 +5,9 @@
 ## 项目特点
 
 1. 与`NPY`文件格式兼容, 可以用原生的`np.load`函数加载
-2. 支持`memmap`模式, 可以跨进程一读多写
-3. 支持调整文件大小
+2. 支持`memmap`模式, 可以跨进程一写多读。`append`、`pop`
+3. 支持调整文件大小`resize`，但不移动数据
+4. 支持`tell`、`seek`、`rewind`、`read`等操作
 
 ## 安装
 
@@ -58,7 +59,7 @@ print(nt3.data())
 
 ## 如何实现修改文件大小而不移动数据
 
-`NPY`文件头有`shape`信息字符串，例如；
+`NPY`文件头有`shape`信息的字符串，例如；
 
 ```text
 (20, 3)
@@ -73,7 +74,7 @@ print(nt3.data())
 ```
 
 这样就可以直接修改数据大小而不用移动数据区。
-故`np.save`保存的文件'.npy'无法用`NPYT`来修改大小，但反过来`NPYT.save`保存的文件可以用`np.load`来读取。
+故`np.save`保存的文件`.npy`无法用`NPYT`来修改大小，但反过来`NPYT.save`保存的文件可以用`np.load`来读取。
 
 ## 环形缓冲区RingBuffer
 
