@@ -89,7 +89,7 @@ print(nt3.data())
 
 1. 优先使用`NPYT`，并且`append(ringbuffer=False)`，使用普通缓存区
 2. 使用`append(bulk=True)`，防止输入数据被切片到不连续的缓存区。注意：
-    - `bulk=True`，失败时返回值等于`len(array)`，成攻返回值`0`
+    - `bulk=True`，失败时返回值等于`len(array)`，成功返回值`0`
     - `bulk=Flase`，返回值范围`0~len(array)`。`>0`时还有数据没插入，一定不能忘了
 3. `NPYT.save(arr, capacity=?)` 分配2n以上的空间
     - 环形缓冲区时，减少成环概率
