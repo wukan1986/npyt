@@ -16,6 +16,7 @@ from numba.experimental import jitclass
 # def _descr_to_dtype(descr):
 #     return dtype_with_align(_origin_descr_to_dtype(descr))
 #
+#
 # np.lib.format.descr_to_dtype = _descr_to_dtype
 
 file = "tmp.npy"
@@ -48,5 +49,9 @@ print(arr1.dtype)  # align=True
 print(arr2.dtype)  # align=False
 arr2[:] = arr1  # OK
 
+arr1['a'] = 10
+
 t = Test(arr2)
 t.modify(arr1)  # assert fromty.mutable != toty.mutable or toty.layout == 'A'
+
+print(arr2)

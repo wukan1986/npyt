@@ -5,15 +5,15 @@ import numpy as np
 from npyt import NPYT
 
 file = "tmp.npy"
-arr = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint64)
+arr = np.arange(0, 20, dtype=np.uint64)
 
 
 def test_read():
-    nt = NPYT(file).save(arr, capacity=6).load(mmap_mode="r+")
+    nt = NPYT(file).save(arr).load(mmap_mode="r+")
 
-    nt._test(5, 3)
+    nt._test(15, 10)
     nt.rewind()
-    assert nt.tell() == 5
+    assert nt.tell() == 15
     for i in range(0, 8):
         print(nt.read(n=1))
 
@@ -21,6 +21,11 @@ def test_read():
     nt.rewind()
     for i in range(0, 4):
         print(nt.read(n=2))
+
+    print("=" * 60)
+    nt.rewind()
+    for i in range(0, 8):
+        print(nt.read(n=2, prefetch=2))
 
     del nt
 

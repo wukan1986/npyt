@@ -1,6 +1,9 @@
 # C++ 浅谈Ring Buffer
 # https://mp.weixin.qq.com/s/z2JzgS8dt04SJgWPT1v24w
 import os
+import pathlib
+import shutil
+from datetime import datetime
 from typing import Optional
 
 import numpy as np
@@ -181,6 +184,13 @@ class NPYT:
         resize(self._filename, arr, start, end, capacity)
 
         return self
+
+    def backup(self, to_path: str, dt: datetime = datetime.now()) -> None:
+        """备份"""
+        path = pathlib.Path(to_path) / dt.strftime("%Y%m%d")
+        path.mkdir(parents=True, exist_ok=True)
+
+        shutil.copy2(self._filename, path)
 
     def slice(self, start: int, end: int, part: int) -> np.ndarray:
         """切片。数据出现拼接时将无法直接修改
@@ -398,17 +408,41 @@ class NPYT:
             end += self._raw_len()
             self._tell = max(min(_curr + offset, end), start) % (self._capacity + 1)
 
-    def read(self, n: int = 1, copy: bool = False) -> np.ndarray:
-        """读取n行数据。不移动start指针，而是移动tell指针"""
-        start, end = self.tell(), self.end()  # 这里用的是tell
+    def read(self, n: int = 1, prefetch: int = 0, copy: bool = False) -> np.ndarray:
+        """读取n行数据。不移动start指针，而是移动tell指针
+
+        Parameters
+        ----------
+        n:int
+            读取行数
+        prefetch:int
+            预读取行数。需>=0
+        copy:bool
+            是否复制
+
+        Returns
+        -------
+        np.ndarray
+            读取的数据
+
+        """
+        start, end = self.start(), self.end()
         if end >= start:
+            _start = max(self._tell - prefetch, start)
+            _end = min(self._tell + n, end)
+            _tell = _end
+        elif end >= self._tell:
+            # 虽有预取，但不折返取
+            _start = max(self._tell - prefetch, 0)
             _end = min(self._tell + n, end)
             _tell = _end
         else:
+            _start = max(self._tell - prefetch, start)
             _end = min(self._tell + n, self._raw_len())
+            # 指针移动到开头
             _tell = _end % self._capacity
 
-        arr = self._a[start:_end]
+        arr = self._a[_start:_end]
         if copy:
             arr = arr.copy()
         self._tell = _tell
