@@ -20,6 +20,37 @@ _TAIL_SIZE_: int = 4
 _TAIL_ITEMSIZE_: int = np.dtype(np.uint64).itemsize * _TAIL_SIZE_
 _MAGIC_NUMBER_: int = 20250510_080000  # 2025年05月10日 东八区
 
+# 记录原始函数
+_origin_descr_to_dtype = np.lib.format.descr_to_dtype
+
+
+def dtype_with_align(dtype: np.dtype):
+    """想办法为dtype加上align参数
+
+    np.load加载的dtype.descr不含alignment，表面上可以正常使用，但与numba配合时报错
+    float64位转float32报错，因为类型不同导致了复制，然后复制的是只读不能写入
+
+    """
+    # https://github.com/numpy/numpy/pull/24685
+    if dtype.names is None:
+        return dtype
+    align = len(dtype.descr) > len(dtype.names)
+    descr = [(x, y) for x, y in dtype.descr if x != '']
+    return np.dtype(descr, align=align)
+
+
+def _descr_to_dtype(descr):
+    return dtype_with_align(_origin_descr_to_dtype(descr))
+
+
+# 函数替换
+np.lib.format.descr_to_dtype = _descr_to_dtype
+
+
+def dtype_to_column_dtypes(dtype):
+    """df.to_records的dtype转column_dtypes"""
+    return {x: y for x, y in dtype.descr if x != ''}
+
 
 class TuplePad(tuple):
 
@@ -108,12 +139,15 @@ def write_footer(fp, dtype: np.dtype, shape: tuple, start: int, end: int, offset
 
 def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
     """加载带尾巴的NPY格式文件"""
-    arr = np.load(filename, mmap_mode=mmap_mode)
+    # dtype缺align，提前修改了函数np.lib.format.descr_to_dtype
     tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mmap_mode,
                      offset=os.path.getsize(filename) - _TAIL_ITEMSIZE_)
-
     if tail[3] != _MAGIC_NUMBER_:
-        logger.error(f"文件格式错误，不是`NPYT`格式文件，涉及到尾部信息的函数都不正确，谨慎使用")
+        logger.warning(f"文件格式错误，不是`NPYT`格式文件，涉及到尾部信息的函数都不正确，谨慎使用")
+        # 设置成None防止array被修改
+        tail = None
+    arr = np.load(filename, mmap_mode=mmap_mode)
+
     return arr, tail
 
 

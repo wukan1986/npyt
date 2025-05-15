@@ -18,8 +18,8 @@ def test_arr(arr):
 
     nt = NPYT(file).load(mmap_mode="r")
     np.testing.assert_array_equal(arr, nt._raw())
-    np.testing.assert_array_equal(nt.info(), nt._raw()[-4:])
-    assert nt.data() == [4]
+    assert nt.info() is None
+    print(nt._raw())
     del nt
 
     os.remove(file)

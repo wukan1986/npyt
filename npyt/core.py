@@ -38,6 +38,8 @@ class NPYT:
         self._a: Optional[np.ndarray] = None
         self._capacity: int = 0
         self._tell: int = 0
+        # 从np.save/np.load丢弃了重要的alignment
+        self._dtype: Optional[np.dtype] = None
 
     def _test(self, start: int, end: int):
         """测试用。强行设置头尾指针"""
@@ -54,7 +56,13 @@ class NPYT:
 
     def info(self):
         """获取尾巴关键信息"""
+        if self._t is None:
+            return None
         return tuple(self._t.tolist())
+
+    def dtype(self) -> np.dtype:
+        """获取数据类型"""
+        return self._dtype
 
     def clear(self):
         """重置位置指针，相当于清空了数据"""
@@ -102,21 +110,37 @@ class NPYT:
         """
         self._a, self._t = load(self._filename, mmap_mode=mmap_mode)
         self._capacity = self._a.shape[0]
+        if self._dtype is None:
+            self._dtype = self._a.dtype
         return self
 
-    def save(self, array: np.ndarray, capacity: int = 0, end: Optional[int] = None) -> Self:
+    def save(self, array: Optional[np.ndarray] = None, dtype: Optional[np.dtype] = None,
+             capacity: int = 0, end: Optional[int] = None,
+             skip_if_exists: bool = True) -> Self:
         """创建文件
 
         Parameters
         ----------
-        array:
-            初始数据
+        array: np.ndarry
+            初始数据.如果为None，将创建一个空数组。
+        dtype:np.dtype
+            数据类型
         capacity:int
             最大容量
         end:int
             结束位置。0表示只创建文件，数据区为空。None表示使用array的长度。
+        skip_if_exists:bool
+            如果文件已经存在了就跳过。反之新建
 
         """
+        if skip_if_exists and os.path.exists(self._filename):
+            return self
+
+        if array is None:
+            array = np.empty((1,), dtype=dtype)
+            end = 0
+        # 记下来，等会可能用到
+        self._dtype = array.dtype
         save(get_file_ctx(self._filename, mode="wb+"), array, capacity, end)
 
         return self
@@ -223,6 +247,9 @@ class NPYT:
         a1 = self._a[max(self._raw_len() - remaining, start):]
         return np.concatenate([a1, a2])
 
+    def at(self, index):
+        return self._a[index]
+
     def pop(self, copy: bool) -> np.ndarray:
         """取数据块。环形要取两次才能取完
 
@@ -247,7 +274,7 @@ class NPYT:
             _end = self._raw_len()
             _start = 0
 
-        arr = self._a[start:end]
+        arr = self._a[start:_end]
         if copy:
             arr = arr.copy()
         self._t[0] = _start
@@ -373,7 +400,7 @@ class NPYT:
 
     def read(self, n: int = 1, copy: bool = False) -> np.ndarray:
         """读取n行数据。不移动start指针，而是移动tell指针"""
-        start, end = self.tell(), self.end() # 这里用的是tell
+        start, end = self.tell(), self.end()  # 这里用的是tell
         if end >= start:
             _end = min(self._tell + n, end)
             _tell = _end
@@ -381,7 +408,7 @@ class NPYT:
             _end = min(self._tell + n, self._raw_len())
             _tell = _end % self._capacity
 
-        arr = self._a[self._tell:_end]
+        arr = self._a[start:_end]
         if copy:
             arr = arr.copy()
         self._tell = _tell

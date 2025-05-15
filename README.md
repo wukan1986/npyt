@@ -53,9 +53,7 @@ print(nt3.data())
 标记是放在同一文件，还是放在不同文件呢？
 
 最开始是放在不同文件，这样代码实现方便，但是要维护两个文件。
-后来发现`np.load`函数支持`mmap_mode`参数，可以直接加载内存映射文件，并且还是直接带了`dtype`和`shape`信息。为何不直接用呢？
-
-只要把额外信息放在`NPY`文件的尾部就可以了。
+后来发现`np.load`函数支持`mmap_mode`参数，可以直接加载内存映射文件，并且还是直接带了`dtype`和`shape`信息。为何不直接用呢？ 只要把额外信息放在`NPY`文件的尾部就可以了。
 
 ## 如何实现修改文件大小而不移动数据
 
@@ -74,7 +72,13 @@ print(nt3.data())
 ```
 
 这样就可以直接修改数据大小而不用移动数据区。
-故`np.save`保存的文件`.npy`无法用`NPYT`来修改大小，但反过来`NPYT.save`保存的文件可以用`np.load`来读取。
+
+## 兼容性
+
+1. `np.load`可以打开`NPYT.save`保存的文件。`NPYT.load`可以打开`np.save`保存的文件, 取原始数据`NPYT._raw()`
+2. `npy`文件大小不可修改，`NPYT.resize`文件大小可以修改
+3. `np.load`后`dtype`缺失`align`属性。`NPYT.load`后`dtype`还原了`align`属性。(numpy 2.2.5)
+    - 当`array`要传给`numba.jit`函数，函数中需要对`array`进行修改，由于`align`属性缺失，可能导致修改时出现数据复制，复制出来的对象是只读
 
 ## 环形缓冲区RingBuffer
 

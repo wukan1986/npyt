@@ -7,6 +7,7 @@ from npyt import NPYT
 
 file = "tmp.npy"
 
+
 @pytest.fixture
 def some_data():
     dtype = np.dtype([
@@ -26,7 +27,7 @@ def some_data():
 
 
 def test_some_data(some_data):
-    nt = NPYT(file).save(some_data, capacity=5).load(mmap_mode="r+")
+    nt = NPYT(file).save(some_data, capacity=5, skip_if_exists=False).load(mmap_mode="r+")
     nt.append(some_data, ringbuffer=False)
     nt.append(some_data[0:1], ringbuffer=False)
 
