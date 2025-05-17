@@ -40,6 +40,10 @@ class NPY8:
         # 正在读的文件名时间戳
         self._reader_ts: int = -1
 
+    def capacity(self) -> int:
+        """总容量。只是队列中的文件容量之和。与NPYT的接口保持相同"""
+        return self._capacity_per_file * self._size
+
     def remove(self):
         """删除文件"""
         self._writer = None
@@ -66,7 +70,7 @@ class NPY8:
 
         return self
 
-    def append(self, data: np.ndarray) -> Self:
+    def append(self, data: np.ndarray) -> int:
         """添加数据，遇到文件空间不足时会新增文件
 
         Parameters
@@ -79,7 +83,7 @@ class NPY8:
             remaining = self._writer.append(data)
             if remaining == 0:
                 # 成功
-                return self
+                return 0
 
             # 失败
             if self._lock[-1] > 0:
@@ -112,7 +116,7 @@ class NPY8:
             logger.trace("create {}", filename.resolve())
             # 可以一次性保存大文件
             self._writer = NPYT(filename).save(array=data, capacity=self._capacity_per_file).load(mmap_mode="r+")
-            return self
+            return 0
 
     def read(self, n: int = 1024, prefetch: int = 0) -> np.ndarray:
         """读取数据
@@ -211,7 +215,7 @@ class NPY8:
 
         return outputs
 
-    def merge(self, batch_size: int = 4):
+    def merge(self, batch_size: int = 4) -> bool:
         """合并文件，并改名
 
         Parameters
@@ -227,8 +231,11 @@ class NPY8:
                 continue
             f1 = NPYT(batch[0]).load(mmap_mode="r+")
             for f in batch[1:]:
-                f1.merge(NPYT(f).load(mmap_mode="r"))
+                if not f1.merge(NPYT(f).load(mmap_mode="r")):
+                    return False
             # 改个名字，防止重复合并
             f = f1.filename().with_suffix('.npy_')
             f1.rename(f)
             logger.info("merge to {} from {}", f, batch)
+
+        return True

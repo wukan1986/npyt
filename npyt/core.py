@@ -70,7 +70,7 @@ class NPYT:
         """获取数据类型"""
         return self._dtype
 
-    def clear(self):
+    def clear(self) -> None:
         """重置位置指针，相当于清空了数据"""
         self._t[0:2] = 0
 
