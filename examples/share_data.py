@@ -4,7 +4,7 @@ import numpy as np
 
 from npyt import NPYT
 
-arr = np.array([1, 2, 3, 4, 5, 6])
+arr = np.array([1, 2, 3, 4, 5, 6], dtype=np.uint32)
 
 file = "tmp.npy"
 # 创建文件

@@ -26,13 +26,16 @@ class NPYT:
 
     """
 
-    def __init__(self, filename: Union[str, Path]):
+    def __init__(self, filename: Union[str, Path], dtype: Optional[np.dtype] = None):
         """初始化
 
         Parameters
         ----------
         filename:str
             文件名
+        dtype:np.dtype
+            数据类型。
+                to_records时，数据类型可能与预期的不一致。append时可能取的dtyep不满足。所以在这提前限制更合适
 
         """
         self._filename: Path = Path(filename)
@@ -42,7 +45,7 @@ class NPYT:
         self._capacity: int = 0
         self._tell: int = 0
         # 从np.save/np.load丢弃了重要的alignment
-        self._dtype: Optional[np.dtype] = None
+        self._dtype: Optional[np.dtype] = dtype
 
     def filename(self) -> Path:
         return self._filename
@@ -119,9 +122,11 @@ class NPYT:
         self._capacity = self._a.shape[0]
         if self._dtype is None:
             self._dtype = self._a.dtype
+        else:
+            assert self._dtype == self._a.dtype, f"dtype mismatch {self._dtype} != {self._a.dtype}"
         return self
 
-    def save(self, array: Optional[np.ndarray] = None, dtype: Optional[np.dtype] = None,
+    def save(self, array: Optional[np.ndarray] = None,
              capacity: int = 0, end: Optional[int] = None,
              skip_if_exists: bool = True) -> Self:
         """创建文件
@@ -130,8 +135,6 @@ class NPYT:
         ----------
         array: np.ndarry
             初始数据.如果为None，将创建一个空数组。
-        dtype:np.dtype
-            数据类型
         capacity:int
             最大容量
         end:int
@@ -144,10 +147,12 @@ class NPYT:
             return self
 
         if array is None:
-            array = np.empty((1,), dtype=dtype)
+            array = np.empty((1,), dtype=self._dtype)
             end = 0
-        # 记下来，等会可能用到
-        self._dtype = array.dtype
+        elif self._dtype is None:
+            self._dtype = array.dtype
+        else:
+            assert self._dtype == array.dtype, f"dtype mismatch {self._dtype} != {array.dtype}"
         save(get_file_ctx(self._filename, mode="wb+"), array, capacity, end)
 
         return self

@@ -90,14 +90,15 @@ print(nt3.data())
 
 ## 优化建议
 
-`NPY8.tail`是跨文件的，如果能大概率取的是一个文件而不是多个文件，就能减少拷贝
+1. `NPY8.tail`是跨文件的，如果能大概率取的是一个文件而不是多个文件，就能减少拷贝
+    1. 返回的是`np.ndarray`列表，一个个按需使用比`concat`后使用更好
+    2. `capacity_per_file`设置得大一些，越大越能减少跨文件的概率。例如：
+        - capacity=100,tail=100,则99%的概率跨文件
+        - capacity=100,tail=50,则49%的概率跨文件
+        - capacity=50,tail=1,则0%的概率跨文件
+        - (tail-1)/capacity 跨文件的概率
 
-1. 返回的是`np.ndarray`列表，一个个按需使用比`concat`后使用更好
-2. `capacity_per_file`设置得大一些，越大越能减少跨文件的概率。例如：
-    - capacity=100,tail=100,则99%的概率跨文件
-    - capacity=100,tail=50,则49%的概率跨文件
-    - capacity=50,tail=1,则0%的概率跨文件
-    - (tail-1)/capacity 跨文件的概率
+   `tail`由自己的策略所决定，根据用户能接受的概率，文件大小，记录时长来设置`capacity_per_file`
 
-`tail`由自己的策略所决定，根据用户能接受的概率，文件大小，记录时长来设置`capacity_per_file`
-
+2. `NPY8.read`一次只读取一个文件，适合遍历场景。`capacity`很大时。可以认为与`tail`功能接近
+    - `read(n=1000, prefetch=100)` 最多返回`1000+100`条数据

@@ -13,7 +13,7 @@ from npyt import NPYT
 
 class NPY8:
 
-    def __init__(self, name: str, capacity_per_file: int = 1024, query_size: int = 4):
+    def __init__(self, name: str, capacity_per_file: int = 1024, query_size: int = 4, dtype: Optional[np.dtype] = None):
         """无尽头增长文件
 
         Parameters
@@ -29,6 +29,7 @@ class NPY8:
         self._name: str = name
         self._capacity_per_file: int = capacity_per_file
         self._size: int = max(query_size, 2)
+        self._dtype: Optional[np.dtype] = dtype
 
         self._path: Path = Path(self._name)
         self._path.mkdir(parents=True, exist_ok=True)
@@ -110,12 +111,12 @@ class NPY8:
         filename = self._path / f'{t}.npy'
         if filename.exists():
             # 加载已有文件
-            self._writer = NPYT(filename).load(mmap_mode="r+")
+            self._writer = NPYT(filename, dtype=self._dtype).load(mmap_mode="r+")
             return self.append(data)
         else:
             logger.trace("create {}", filename.resolve())
             # 可以一次性保存大文件
-            self._writer = NPYT(filename).save(array=data, capacity=self._capacity_per_file).load(mmap_mode="r+")
+            self._writer = NPYT(filename, dtype=self._dtype).save(array=data, capacity=self._capacity_per_file).load(mmap_mode="r+")
             return 0
 
     def read(self, n: int = 1024, prefetch: int = 0) -> np.ndarray:
@@ -207,7 +208,7 @@ class NPY8:
             t = self._lock[i]
             filename = self._path / f'{t}.npy'
             if filename.exists():
-                arr = NPYT(filename).load(mmap_mode="r").tail(remaining)
+                arr = NPYT(filename).load(mmap_mode="r").head(remaining)
                 outputs.append(arr)
                 remaining -= len(arr)
                 if remaining <= 0:
