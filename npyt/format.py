@@ -1,5 +1,6 @@
 import contextlib
 import os
+from pathlib import Path
 from typing import Optional, Literal, Tuple
 
 import numpy as np
@@ -166,7 +167,7 @@ def save(file_ctx, array: np.ndarray, capacity: int, end: Optional[int] = None) 
         fp.flush()
 
 
-def resize(filename: str, row: np.ndarray, start: int, end: int, capacity: Optional[int] = None):
+def resize(filename: Path, row: np.ndarray, start: int, end: int, capacity: Optional[int] = None) -> bool:
     """文件截断或扩充
 
     Parameters
@@ -190,11 +191,18 @@ def resize(filename: str, row: np.ndarray, start: int, end: int, capacity: Optio
     # 其实是直接用的capacity生成shape
     shape = get_shape(row.shape, capacity)
 
-    with get_file_ctx(filename, mode="r+b") as fp:
-        offset = write_header(fp, row, shape)
-        fp.seek(get_nbytes(row.dtype, shape, 0), 1)
-        write_footer(fp, row.dtype, shape, start, end, offset)
-        fp.truncate(fp.tell())
-        fp.flush()
-
-    return
+    try:
+        with get_file_ctx(filename, mode="r+b") as fp:
+            old_size = fp.seek(0, 2)
+            fp.seek(0, 0)
+            offset = write_header(fp, row, shape)
+            fp.seek(get_nbytes(row.dtype, shape, 0), 1)
+            write_footer(fp, row.dtype, shape, start, end, offset)
+            new_size = fp.tell()
+            fp.truncate(new_size)
+            fp.flush()
+            logger.trace("resize {} from {} to {}", filename.resolve(), old_size, new_size)
+        return True
+    except PermissionError as e:
+        logger.error("resize {} error:{}", filename.resolve(), e)
+        return False

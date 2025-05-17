@@ -7,6 +7,7 @@ dependencies = [
     "loguru",
     "numpy",
     "typing_extensions",
+    "more_itertools",
 ]
 dynamic = ["version"]
 

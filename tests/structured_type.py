@@ -28,8 +28,8 @@ def some_data():
 
 def test_some_data(some_data):
     nt = NPYT(file).save(some_data, capacity=5, skip_if_exists=False).load(mmap_mode="r+")
-    nt.append(some_data, ringbuffer=False)
-    nt.append(some_data[0:1], ringbuffer=False)
+    nt.append(some_data)
+    nt.append(some_data[0:1])
 
     # 用numpy原生函数也可以读
     np.testing.assert_array_equal(np.load(file), nt.data())

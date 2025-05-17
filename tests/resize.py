@@ -21,6 +21,14 @@ def test_resize():
     arr1 = np.array([1, 2, 3, 4, 5, 6, 0, 6], dtype=np.uint64)
     np.testing.assert_array_equal(nt._raw(), arr1)
 
+    nt2 = NPYT(file).load(mmap_mode="r+")
+    nt2.data()
+    nt.resize(capacity=20).load(mmap_mode="r")
+    print(nt2._raw())
+    nt.resize(capacity=None).load(mmap_mode="r")
+    print(nt2._raw())
+
     del nt
+    del nt2
 
     os.remove(file)

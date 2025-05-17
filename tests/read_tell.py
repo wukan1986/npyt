@@ -13,19 +13,9 @@ def test_read():
 
     nt._test(15, 10)
     nt.rewind()
-    assert nt.tell() == 15
+    assert nt.tell() == 0
     for i in range(0, 8):
         print(nt.read(n=1))
-
-    print("=" * 60)
-    nt.rewind()
-    for i in range(0, 4):
-        print(nt.read(n=2))
-
-    print("=" * 60)
-    nt.rewind()
-    for i in range(0, 8):
-        print(nt.read(n=2, prefetch=2))
 
     del nt
 

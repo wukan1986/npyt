@@ -2,11 +2,11 @@
 # https://mp.weixin.qq.com/s/z2JzgS8dt04SJgWPT1v24w
 import os
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
-from loguru import logger
 from typing_extensions import Literal  # 3.8+
 from typing_extensions import Self  # 3.11+
 
@@ -76,8 +76,7 @@ class NPYT:
 
     def start(self) -> int:
         """获取缓冲区开始位置"""
-        # return int(self._t[0])
-        return 0
+        return int(self._t[0])
 
     def end(self) -> int:
         """获取缓冲区结束位置"""
@@ -189,39 +188,126 @@ class NPYT:
 
         return self
 
-    def backup(self, to_path: str) -> None:
+    def backup(self, to_path: str, dt: datetime = datetime.now()) -> None:
         """备份"""
-        path = Path(to_path)
+        path = pathlib.Path(to_path) / dt.strftime("%Y%m%d")
         path.mkdir(parents=True, exist_ok=True)
 
         shutil.copy2(self._filename, path)
-        logger.info("backup {} to {}", self._filename, path)
+
+    def slice(self, start: int, end: int, part: int) -> np.ndarray:
+        """切片。数据出现拼接时将无法直接修改
+
+        Parameters
+        ----------
+        start:int
+        end:int
+        part:int
+
+        Notes
+        -----
+        主要是内部使用，所以没有参数检查
+
+        """
+        if end >= start:
+            # 正向。原数据可被修改
+            return self._a[start:end]
+        elif part == 0:
+            # 右端
+            return self._a[start:]
+        elif part == 1:
+            # 左端
+            return self._a[:end]
+        else:
+            # 环向。原数据无法修改
+            return np.concatenate([self._a[start:], self._a[:end]])
 
     def data(self) -> np.ndarray:
         """取数据区。环形数据会拼接起来不可修改"""
-        start, end = self.start(), self.end()
-        return self._a[start:end]
+        return self.slice(self.start(), self.end(), part=2)
 
     def head(self, n: int = 5) -> np.ndarray:
         """取头部数据"""
+        # 这种写法某些情况下产生复制，效率低
+        # return self.data()[:n]
         start, end = self.start(), self.end()
-        return self._a[start:min(start + n, end)]
+        if end >= start:
+            return self._a[start:min(start + n, end)]
+
+        a1 = self._a[start:start + n]
+        remaining = n - len(a1)
+        if remaining == 0 or end == 0:
+            return a1
+
+        # 这后面发生了合并复制
+        a2 = self._a[:min(remaining, end)]
+        return np.concatenate([a1, a2])
 
     def tail(self, n: int = 5) -> np.ndarray:
         """取尾部数据"""
+        # 这种写法某些情况下产生复制，效率低
+        # return self.data()[-n:]
         start, end = self.start(), self.end()
-        return self._a[max(start, end - n):end]
+        if end >= start:
+            return self._a[max(start, end - n):end]
+
+        a2 = self._a[max(end - n, 0):end]
+        remaining = n - len(a2)
+        if remaining == 0 or start == self._raw_len():
+            return a2
+
+        # 这后面发生了合并复制
+        a1 = self._a[max(self._raw_len() - remaining, start):]
+        return np.concatenate([a1, a2])
 
     def at(self, index):
         return self._a[index]
 
-    def append(self, array: np.ndarray) -> int:
+    def pop(self, copy: bool) -> np.ndarray:
+        """取数据块。环形要取两次才能取完
+
+        底层是切片，然后移动指针位置
+
+        Parameters
+        ----------
+        copy:bool
+            是否复制
+
+        Notes
+        -----
+        1. 取数时，如果其他线程正在写，可能指针位置已经指向开头，但数据还没有复制出来
+         可以选择`copy=True`，但遇到大数据量性能下降
+
+        """
+        start, end = self.start(), self.end()
+        if end >= start:
+            _end = end
+            _start = end
+        else:
+            _end = self._raw_len()
+            _start = 0
+
+        arr = self._a[start:_end]
+        if copy:
+            arr = arr.copy()
+        self._t[0] = _start
+
+        return arr
+
+    def append(self, array: np.ndarray, ringbuffer: bool = False, bulk: bool = True) -> int:
         """缓冲区插入函数
 
         Parameters
         ----------
         array:
             插入的数据
+        ringbuffer:bool
+            是否RingBuffer模式。RingBuffer模式会出现start>end的情况，在取全体数据时会导致拼接复制
+        bulk:bool
+            整体一批插入，不能分两次。
+
+            - True: 空间不够时，不插入数据，返回原数组长度
+            - False: 空间不够时，能插就插，返回未插入长度
 
         Returns
         -------
@@ -251,77 +337,37 @@ class NPYT:
         if remaining == 0:
             return remaining
 
-        end = self.end()
-        _end = end + remaining
+        start, end = self.start(), self.end()
+
         # 数据空了，后面空间也不够，移动到开头
-        if _end > self._raw_len():
+        if start == end and end + remaining >= self._raw_len():
+            end = 0
+            start = 0
+        elif end == self._raw_len():
+            # 到末尾了,头部又有空间，移动到开头
+            if ringbuffer and start > 0:
+                end = 0
+
+        # 找到可填充大小
+        if end >= start:
+            _size = min(self._raw_len() - end, remaining)
+        else:
+            _size = min(start - 1 - end, remaining)
+
+        if bulk and _size < remaining:
+            # 数据必须整体插入，不能分成两部分
             return remaining
 
-        self._a[end:_end] = array
+        # 无可填充空间，跳过
+        if _size <= 0:
+            return remaining
+        remaining -= _size
+
+        _end = end + _size
+        self._a[end:_end] = array[:_size]
         self._t[1] = _end
 
-        return 0
-
-    def expend(self, array: np.ndarray) -> bool:
-        """缓冲区插入函数，空间不够扩充文件大小
-
-        Parameters
-        ----------
-        array:
-            插入的数据
-
-        Returns
-        -------
-        int
-            剩余未插入的行数
-
-        """
-        remaining = array.shape[0]
-        # 空内容，没必要
-        if remaining == 0:
-            return False
-
-        end = self.end()
-        _end = end + remaining
-        # 数据空了，后面空间也不够，移动到开头
-        if _end > self._raw_len():
-            if self.resize(_end):
-                self.load("r+").append(array)
-                return True
-            else:
-                self.load("r+")
-                return False
-
-        self._a[end:_end] = array
-        self._t[1] = _end
-
-        return True
-
-    def remove(self) -> bool:
-        """删除文件"""
-        self._a = None
-        self._t = None
-        try:
-            os.remove(self._filename)
-            logger.trace("remove {}", self._filename.resolve())
-            return True
-        except PermissionError as e:
-            logger.error("remove {} error:{}", self._filename.resolve(), e)
-            return False
-
-    def merge(self, obj: Self) -> bool:
-        """合并文件"""
-        if self.expend(obj.data()):
-            return obj.remove()
-        return False
-
-    def rename(self, name) -> Self:
-        """重命名"""
-        self._a = None
-        self._t = None
-        shutil.move(self._filename, name)
-        self._filename = Path(name)
-        return self
+        return remaining
 
     def tell(self) -> int:
         return self._tell
@@ -358,9 +404,14 @@ class NPYT:
         else:
             _curr = end
 
-        self._tell = max(min(_curr + offset, end), start)
+        if end >= start:
+            self._tell = max(min(_curr + offset, end), start)
+        else:
+            start -= self._raw_len()
+            end += self._raw_len()
+            self._tell = max(min(_curr + offset, end), start) % (self._capacity + 1)
 
-    def read(self, n: int = 1, prefetch: int = 0) -> np.ndarray:
+    def read(self, n: int = 1, prefetch: int = 0, copy: bool = False) -> np.ndarray:
         """读取n行数据。不移动start指针，而是移动tell指针
 
         Parameters
@@ -369,6 +420,8 @@ class NPYT:
             读取行数
         prefetch:int
             预读取行数。需>=0
+        copy:bool
+            是否复制
 
         Returns
         -------
@@ -377,10 +430,51 @@ class NPYT:
 
         """
         start, end = self.start(), self.end()
+        if end >= start:
+            _start = max(self._tell - prefetch, start)
+            _end = min(self._tell + n, end)
+            _tell = _end
+        elif end >= self._tell:
+            # 虽有预取，但不折返取
+            _start = max(self._tell - prefetch, 0)
+            _end = min(self._tell + n, end)
+            _tell = _end
+        else:
+            _start = max(self._tell - prefetch, start)
+            _end = min(self._tell + n, self._raw_len())
+            # 指针移动到开头
+            _tell = _end % self._capacity
 
-        _start = max(self._tell - prefetch, start)
-        self._tell = min(self._tell + n, end)
-
-        arr = self._a[_start:self._tell]
+        arr = self._a[_start:_end]
+        if copy:
+            arr = arr.copy()
+        self._tell = _tell
 
         return arr
+
+
+class NPYT_RB(NPYT):
+    """RingBuffer版"""
+
+    def append(self, array: np.ndarray, ringbuffer: bool = True, bulk: bool = False) -> int:
+        """添加数据，默认是环形缓冲区"""
+        return super().append(array, ringbuffer, bulk)
+
+    def append2(self, array: np.ndarray) -> int:
+        """执行两次，第一次填充右边，第二次填充左边"""
+        remaining = self.append(array, ringbuffer=True, bulk=False)
+        # 插入失败，直接返回
+        if remaining == array.shape[0]:
+            return remaining
+
+        # 还有剩余，再插一次
+        if remaining > 0:
+            remaining = self.append(array[-remaining:], ringbuffer=True, bulk=False)
+        return remaining
+
+    def pop2(self, copy=True):
+        arr1 = super().pop(copy=copy)
+        arr2 = super().pop(copy=copy)
+        if arr2.shape[0] == 0:
+            return arr1
+        return np.concatenate([arr1, arr2])

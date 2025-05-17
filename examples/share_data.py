@@ -13,21 +13,14 @@ nt1 = NPYT(file).save(arr, capacity=10, end=0).load(mmap_mode="r+")
 nt2 = NPYT(file).load(mmap_mode="r")
 nt3 = NPYT(file).load(mmap_mode="r")
 
-nt1.append(arr, ringbuffer=False, bulk=False)
+nt1.append(arr)
 print(nt2.data())
 
-nt1.append(arr[0:1], ringbuffer=False, bulk=False)
+nt1.append(arr[0:1])
 print(nt3.data())
 
-print("=" * 60)
-nt1._test(3, 6)
-nt1.data()[:] = 1  # 修改数据成功
-print(nt2._raw())
-
-print("=" * 60)
-nt1._test(6, 3)
-nt1.data()[:] = 2  # 修改数据失败。因为环向数据是拼接的
-print(nt2._raw())
+nt1.data()[:3] = 0
+print(nt3.data())
 
 del nt1
 del nt2

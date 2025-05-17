@@ -8,6 +8,7 @@
 2. 支持`memmap`模式, 可以跨进程一写多读。`append`、`pop`
 3. 支持调整文件大小`resize`，但不移动数据
 4. 支持`tell`、`seek`、`rewind`、`read`等操作
+5. 支持无限写入`NPY8`
 
 ## 安装
 
@@ -31,10 +32,10 @@ nt1 = NPYT(file).save(arr, capacity=10, end=0).load(mmap_mode="r+")
 nt2 = NPYT(file).load(mmap_mode="r")
 nt3 = NPYT(file).load(mmap_mode="r")
 
-nt1.append(arr, ringbuffer=False, bulk=False)
+nt1.append(arr)
 print(nt2.data())
 
-nt1.append(arr[0:1], ringbuffer=False, bulk=False)
+nt1.append(arr[0:1])
 print(nt3.data())
 
 ```
@@ -79,22 +80,17 @@ print(nt3.data())
 2. `npy`文件大小不可修改，`NPYT.resize`文件大小可以修改
 3. `np.load`后`dtype`缺失`align`属性。`NPYT.load`后`dtype`还原了`align`属性。(numpy 2.2.5)
     - 当`array`要传给`numba.jit`函数，函数中需要对`array`进行修改，由于`align`属性缺失，可能导致修改时出现数据复制，复制出来的对象是只读
+    - https://github.com/numpy/numpy/issues/28973
 
-## 环形缓冲区RingBuffer
+## 无限写入模式NPY8
 
-本项目支持两种用法：
+最开始提供了`RingBuffer`模式，但是编写过于复杂，还无法零拷贝，所以取消了。现在提供的是无限写入模式`NPY8`，可以`7*24`写入数据
 
-1. 普通缓冲区。`NPYT`
-2. 环形缓冲区。`NPYT_RB`,多了`append2`和`pop2`
-
-环形一定会出现`start>end`的情况, 如果整块取出数据，会出现要拼接首尾两段数据的情况，这会导致数据复制，降低性能。
+本质是创建一个文件夹和一个`.lock`文件，通过`.lock`来维护文件夹中最新的几个`NPYT`文件。
 
 ## 优化建议
 
-1. 优先使用`NPYT`，并且`append(ringbuffer=False)`，使用普通缓存区
-2. 使用`append(bulk=True)`，防止输入数据被切片到不连续的缓存区。注意：
-    - `bulk=True`，失败时返回值等于`len(array)`，成功返回值`0`
-    - `bulk=Flase`，返回值范围`0~len(array)`。`>0`时还有数据没插入，一定不能忘了
-3. `NPYT.save(arr, capacity=?)` 分配2n以上的空间
-    - 环形缓冲区时，减少成环概率
-    - 普通缓冲区时，减少重置指针概率
+`NPY8.tail`是跨文件的，如果能大概率取的是一个文件而不是多个文件，就能减少拷贝
+
+1. `capacity_per_file`或`capacity`设置得大一些，至少要大于`tail`参数的2倍，越大越能减少跨文件的概率
+2. 返回的是`np.ndarray`列表，一个个按需使用比`concat`后使用更好
