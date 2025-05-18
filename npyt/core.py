@@ -194,7 +194,7 @@ class NPYT:
 
         return self
 
-    def backup(self, to_path: str) -> None:
+    def backup(self, to_path: Union[str, Path]) -> None:
         """备份"""
         path = Path(to_path)
         path.mkdir(parents=True, exist_ok=True)

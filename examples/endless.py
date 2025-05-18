@@ -4,6 +4,9 @@ from npyt import NPY8
 
 if __name__ == '__main__':
     ns = NPY8('demo', 21, 8, dtype=np.int32).load()
+    print(ns.read(100))
+    print(ns.tail(100))
+    print(ns.end())
 
     for i in range(9):
         ns.append(np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) + i * 10)

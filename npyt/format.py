@@ -12,10 +12,10 @@ from numpy.lib.format import dtype_to_descr
 """
 添加的小尾巴，欢迎提供更好的格式方案
 
-1 start 开始位置
-2 end 结束位置
-3 offset 数据区开始位置，方便其C++语言快速定位并写入
-4 magic 魔术数，用来判断是否NPYT格式文件
+1. start: 开始位置
+2. end: 结束位置
+3. offset: 数据区开始位置，方便其他语言快速定位并写入
+4. magic: 魔术数，用来判断是否`NPYT`格式文件
 """
 _TAIL_SIZE_: int = 4
 _TAIL_ITEMSIZE_: int = np.dtype(np.uint64).itemsize * _TAIL_SIZE_

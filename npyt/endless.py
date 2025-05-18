@@ -1,7 +1,7 @@
 import shutil
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import more_itertools
 import numpy as np
@@ -13,7 +13,7 @@ from npyt import NPYT
 
 class NPY8:
 
-    def __init__(self, name: str, capacity_per_file: int = 1024, query_size: int = 4, dtype: Optional[np.dtype] = None):
+    def __init__(self, name: Union[str, Path], capacity_per_file: int = 1024, query_size: int = 4, dtype: Optional[np.dtype] = None):
         """无尽头增长文件
 
         Parameters
@@ -215,6 +215,24 @@ class NPY8:
                     break
 
         return outputs
+
+    def start(self) -> int:
+        return 0
+
+    def end(self) -> int:
+        """当前写入位置.如果没有打开文件，尝试打开，失败返回0"""
+        if self._writer:
+            return self._writer.end()
+
+        max_idx = np.argmax(self._lock)
+        for i in range(max_idx, -1, -1):
+            t = self._lock[i]
+            filename = self._path / f'{t}.npy'
+            if filename.exists():
+                self._writer = NPYT(filename, dtype=self._dtype).load(mmap_mode="r+")
+                return self._writer.end()
+
+        return 0
 
     def merge(self, batch_size: int = 4) -> bool:
         """合并文件，并改名
