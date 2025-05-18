@@ -13,7 +13,7 @@ from npyt import NPYT
 
 class NPY8:
 
-    def __init__(self, name: Union[str, Path], capacity_per_file: int = 1024, query_size: int = 4, dtype: Optional[np.dtype] = None):
+    def __init__(self, name: Union[str, Path], capacity_per_file: int = 1024, query_size: int = 8, dtype: Optional[np.dtype] = None):
         """无尽头增长文件
 
         Parameters
@@ -47,14 +47,21 @@ class NPY8:
 
     def remove(self):
         """删除文件"""
+        self._lock = None
         self._writer = None
         self._reader = None
-        self._lock = None
+        self._reader_ts = -1
+
         shutil.rmtree(self._path)
         logger.info("remove {} ", self._path.resolve())
 
     def load(self) -> Self:
         """初始化并加载"""
+        self._lock = None
+        self._writer = None
+        self._reader = None
+        self._reader_ts = -1
+
         if self._path_lock.exists():
             self._lock = np.memmap(self._path_lock, dtype=np.uint64, mode="r+", shape=(self._size,))
         else:
@@ -79,11 +86,15 @@ class NPY8:
         data:np.ndarray
             新数据
 
+        Returns
+        -------
+        int
+            成功返回0，失败返回剩余行数。由于会一直新增文件，理论上一直返回0
+
         """
         if self._writer:
             remaining = self._writer.append(data)
             if remaining == 0:
-                # 成功
                 return 0
 
             # 失败
@@ -95,8 +106,9 @@ class NPY8:
                 # 出队列后修改文件大小。留心文件被占用导致失败
                 filename = self._path / f'{t}.npy'
                 if t == self._reader_ts:
+                    # !!! 已经要出队列了，读指针还没切换，只能说是read调用频率太低，或队列太短
                     self._reader = None
-                    logger.warning('{} is opened', filename.resolve())
+                    logger.warning('{} is still reading. read too less or queue too short', filename.resolve())
                 NPYT(filename).load(mmap_mode='r').resize()
             else:
                 # 到下一个位置
@@ -137,26 +149,31 @@ class NPY8:
         if self._reader:
             arr = self._reader.read(n, prefetch)
             if len(arr) > 0:
-                # 成功
                 return arr
 
-            # 最后一个文件，直接返回，下次要用
+            # 未取得数据，又是最后一个文件，不切换文件，因为下次调用可能又有新数据了
             if np.max(self._lock) == self._reader_ts:
                 return np.empty(0)
 
-        while True:
-            max_idx = np.argmax(self._lock > self._reader_ts)
-            if max_idx == 0:
-                if np.max(self._lock) == self._reader_ts:
-                    return np.empty(0)
-            # 找到最大编号文件。但不知道文件是否满了
-            t = self._lock[max_idx]
-            filename = self._path / f'{t}.npy'
-            self._reader_ts = t
-            if filename.exists():
-                # 加载已有文件
-                self._reader = NPYT(filename).load(mmap_mode="r")
-                return self.read(n, prefetch)
+        # 未打开文件，或未取到数据到此
+        condition = self._lock > self._reader_ts
+        if not np.any(condition):
+            # 没找到任何符合条件的文件. 这里永远都到不了？
+            return np.empty(0)
+
+        # 定位到第一个文件，或上次文件的下一个
+        max_idx = np.argmax(condition)
+        # 找到大于指针位置的文件。0也没关系，反正文件不存在
+        t = self._lock[max_idx]
+        filename = self._path / f'{t}.npy'
+        self._reader_ts = t
+        if filename.exists():
+            # 加载已有文件
+            self._reader = NPYT(filename).load(mmap_mode="r")
+            return self.read(n, prefetch)
+        else:
+            # 文件没了，返回空
+            return np.empty(0)
 
     def tail(self, n: int = 5) -> List[np.ndarray]:
         """取尾部数据
@@ -241,6 +258,10 @@ class NPY8:
         ----------
         batch_size:int
             每批次大小
+
+        Notes
+        -----
+        合并的是不在队列中维护的文件。不影响当前读写指针
 
         """
         batch_size = max(batch_size, 2)
