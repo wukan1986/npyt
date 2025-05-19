@@ -157,7 +157,7 @@ class NPYT:
 
         return self
 
-    def resize(self, capacity: Optional[int] = None) -> Self:
+    def resize(self, capacity: Optional[int] = None) -> bool:
         """文件截断或扩充。不能丢失有效数据
 
         Parameters
@@ -177,7 +177,7 @@ class NPYT:
 
         # 数据环形，文件不能动了
         if end < start:
-            return self
+            return False
 
         # 有效右边界
         if capacity is None:
@@ -190,9 +190,7 @@ class NPYT:
         self._a = None
         self._t = None
         # 释放后就可以动文件了
-        resize(self._filename, arr, start, end, capacity)
-
-        return self
+        return resize(self._filename, arr, start, end, capacity)
 
     def backup(self, to_path: Union[str, Path]) -> None:
         """备份"""
