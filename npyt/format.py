@@ -141,8 +141,10 @@ def write_footer(fp, dtype: np.dtype, shape: tuple, start: int, end: int, offset
 def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.ndarray]:
     """加载带尾巴的NPY格式文件"""
     # dtype缺align，提前修改了函数np.lib.format.descr_to_dtype
+    offset = os.path.getsize(filename)
+    assert offset > _TAIL_ITEMSIZE_, f"文件大小不合法，非有效`NPYT`格式文件"
     tail = np.memmap(filename, shape=(_TAIL_SIZE_,), dtype=np.uint64, mode=mmap_mode,
-                     offset=os.path.getsize(filename) - _TAIL_ITEMSIZE_)
+                     offset=offset - _TAIL_ITEMSIZE_)
     if tail[3] != _MAGIC_NUMBER_:
         logger.warning(f"文件格式错误，不是`NPYT`格式文件，涉及到尾部信息的函数都不正确，谨慎使用")
         # 设置成None防止array被修改
