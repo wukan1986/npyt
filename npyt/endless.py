@@ -275,7 +275,7 @@ class NPY8:
                     return False
             # 改个名字，防止重复合并
             f = f1.filename().with_suffix('.npy_')
-            f1.rename(f)
-            logger.info("merge to {} from {}", f, batch)
+            if f1.rename(f):
+                logger.info("merge to {} from {}", f, batch)
 
         return True

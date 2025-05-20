@@ -40,11 +40,9 @@ class NPYT:
         """
         self._filename: Path = Path(filename)
         self._t: Optional[np.ndarray] = None
-        # 容器，空一行不使用
         self._a: Optional[np.ndarray] = None
         self._capacity: int = 0
         self._tell: int = 0
-        # 从np.save/np.load丢弃了重要的alignment
         self._dtype: Optional[np.dtype] = dtype
 
     def filename(self) -> Path:
@@ -126,8 +124,10 @@ class NPYT:
             assert self._dtype == self._a.dtype, f"dtype mismatch {self._dtype} != {self._a.dtype}"
         return self
 
-    def save(self, array: Optional[np.ndarray] = None,
-             capacity: int = 0, end: Optional[int] = None,
+    def save(self,
+             array: Optional[np.ndarray] = None,
+             capacity: int = 0,
+             end: Optional[int] = None,
              skip_if_exists: bool = True) -> Self:
         """创建文件
 
@@ -165,7 +165,7 @@ class NPYT:
         capacity:int
             新的长度。
 
-            None将截断数据
+            None将截断数据到有效长度
 
         Notes
         -----
@@ -193,7 +193,14 @@ class NPYT:
         return resize(self._filename, arr, start, end, capacity)
 
     def backup(self, to_path: Union[str, Path]) -> None:
-        """备份"""
+        """备份
+
+        Parameters
+        ----------
+        to_path:str
+            备份路径
+
+        """
         path = Path(to_path)
         path.mkdir(parents=True, exist_ok=True)
 
@@ -215,7 +222,15 @@ class NPYT:
         start, end = self.start(), self.end()
         return self._a[max(start, end - n):end]
 
-    def at(self, index):
+    def at(self, index) -> np.ndarray:
+        """取某一行数据
+
+        Parameters
+        ----------
+        index:int
+            索引
+
+        """
         return self._a[index]
 
     def append(self, array: np.ndarray) -> int:
@@ -230,11 +245,6 @@ class NPYT:
         -------
         int
             剩余未插入的行数
-
-        Raises
-        ------
-        ValueError
-            插入的数据长度超过了缓冲区长度
 
         Notes
         -----
@@ -256,7 +266,7 @@ class NPYT:
 
         end = self.end()
         _end = end + remaining
-        # 数据空了，后面空间也不够，移动到开头
+        # 空间不够，直接返回剩余行数
         if _end > self._raw_len():
             return remaining
 
@@ -278,11 +288,15 @@ class NPYT:
         int
             剩余未插入的行数
 
+        See Also
+        --------
+        append: 空间不够直接返回剩余行数
+
         """
         remaining = array.shape[0]
         # 空内容，没必要
         if remaining == 0:
-            return False
+            return True
 
         end = self.end()
         _end = end + remaining
@@ -318,13 +332,13 @@ class NPYT:
             return obj.remove()
         return False
 
-    def rename(self, name) -> Self:
-        """重命名"""
+    def rename(self, name) -> bool:
+        """重命名。如果文件已经存在了会被覆盖"""
         self._a = None
         self._t = None
         shutil.move(self._filename, name)
         self._filename = Path(name)
-        return self
+        return True
 
     def tell(self) -> int:
         return self._tell
@@ -363,7 +377,7 @@ class NPYT:
 
         self._tell = max(min(_curr + offset, end), start)
 
-    def read(self, n: int = 1, prefetch: int = 0) -> np.ndarray:
+    def read(self, n: int = 1024, prefetch: int = 0) -> np.ndarray:
         """读取n行数据。不移动start指针，而是移动tell指针
 
         Parameters

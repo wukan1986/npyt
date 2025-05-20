@@ -155,7 +155,7 @@ def load(filename, mmap_mode: Literal["r", "r+", "w+"]) -> Tuple[np.ndarray, np.
 
 
 def save(file_ctx, array: np.ndarray, capacity: int, end: Optional[int] = None) -> None:
-    """保存时，shape要多一行"""
+    """保存"""
     shape = get_shape(array.shape, capacity)
     end = get_end(array.shape[0], end)
 
@@ -165,6 +165,7 @@ def save(file_ctx, array: np.ndarray, capacity: int, end: Optional[int] = None) 
         if end > 0:
             # 写入数据
             array.tofile(fp)
+        # 写入尾巴。带文件大小调整能力
         write_footer(fp, array.dtype, shape, 0, end, offset)
         fp.flush()
 
