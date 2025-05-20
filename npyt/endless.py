@@ -153,13 +153,13 @@ class NPY8:
 
             # 未取得数据，又是最后一个文件，不切换文件，因为下次调用可能又有新数据了
             if np.max(self._lock) == self._reader_ts:
-                return np.empty(0)
+                return np.empty(0, dtype=self._dtype)
 
         # 未打开文件，或未取到数据到此
         condition = self._lock > self._reader_ts
         if not np.any(condition):
             # 没找到任何符合条件的文件. 这里永远都到不了？
-            return np.empty(0)
+            return np.empty(0, dtype=self._dtype)
 
         # 定位到第一个文件，或上次文件的下一个
         max_idx = np.argmax(condition)
@@ -173,7 +173,7 @@ class NPY8:
             return self.read(n, prefetch)
         else:
             # 文件没了，返回空
-            return np.empty(0)
+            return np.empty(0, dtype=self._dtype)
 
     def tail(self, n: int = 5) -> List[np.ndarray]:
         """取尾部数据
