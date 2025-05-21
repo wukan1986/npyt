@@ -48,7 +48,7 @@ class NPYT:
     def filename(self) -> Path:
         return self._filename
 
-    def _test(self, start: int, end: int):
+    def _test(self, start: int, end: int) -> None:
         """测试用。强行设置头尾指针"""
         self._t[0] = start
         self._t[1] = end
@@ -62,6 +62,7 @@ class NPYT:
         return self._a.shape[0]
 
     def info(self):
+        """获取头信息"""
         """获取尾巴关键信息"""
         if self._t is None:
             return None
@@ -71,9 +72,10 @@ class NPYT:
         """获取数据类型"""
         return self._dtype
 
-    def clear(self) -> None:
+    def clear(self) -> Self:
         """重置位置指针，相当于清空了数据"""
         self._t[0:2] = 0
+        return self
 
     def start(self) -> int:
         """获取缓冲区开始位置"""
@@ -343,7 +345,7 @@ class NPYT:
     def tell(self) -> int:
         return self._tell
 
-    def rewind(self) -> None:
+    def rewind(self) -> Self:
         """重置当前指针到数据的起始位置
 
         Notes
@@ -352,8 +354,9 @@ class NPYT:
 
         """
         self._tell = self.start()
+        return self
 
-    def seek(self, offset: int, whence: int = 0) -> None:
+    def seek(self, offset: int, whence: int = 0) -> Self:
         """在start:end范围内seek
 
         Parameters
@@ -376,6 +379,7 @@ class NPYT:
             _curr = end
 
         self._tell = max(min(_curr + offset, end), start)
+        return self
 
     def read(self, n: int = 1024, prefetch: int = 0) -> np.ndarray:
         """读取n行数据。不移动start指针，而是移动tell指针
